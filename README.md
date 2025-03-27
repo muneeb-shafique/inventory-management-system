@@ -35,7 +35,7 @@
 <h3>Installation Guide</h3>
         <ol>
             <li>Clone this repository to your local machine:</li>
-            <pre><code>git clone https://github.com/yourusername/inventory-management-system.git</code></pre>
+            <pre><code>git clone https://github.com/muneeb-shafique/inventory-management-system</code></pre>
             <li>Install the required dependencies:</li>
             <pre><code>pip install pyqt5 qdarkstyle</code></pre>
             <li>Run the application:</li>
