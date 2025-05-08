@@ -4,7 +4,8 @@ from barcode.writer import ImageWriter
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTableView, QMessageBox, QDialog, QFormLayout, QLineEdit,
-    QComboBox, QDialogButtonBox, QTableWidget, QTableWidgetItem, QLabel, QHeaderView
+    QComboBox, QDialogButtonBox, QTableWidget, QTableWidgetItem, QLabel, QHeaderView, 
+    QSizePolicy
 )
 from PyQt5.QtCore import Qt, QAbstractTableModel, QVariant
 from PyQt5.QtGui import QPixmap, QFont
@@ -108,7 +109,7 @@ def export_invoice_to_pdf(invoice_id, invoiceData, invoiceItems):
     c = canvas.Canvas(pdf_file, pagesize=letter)
     width, height = letter
     c.setFont("Helvetica-Bold", 20)
-    c.drawCentredString(width/2, height - 50, "Inventory Billing Program")
+    c.drawCentredString(width/2, height - 50, "StockFow - Inventory Management System")
     c.setFont("Helvetica-Bold", 16)
     c.drawString(50, height - 100, f"Invoice ID: {invoice_id}")
     c.drawString(50, height - 120, f"Customer ID: {invoiceData.get('customer_id')}")
@@ -342,8 +343,12 @@ class MainWindow(QMainWindow):
     def initUI(self):
         mainLayout = QVBoxLayout()
         # Header label
-        headerLabel = QLabel("Inventory Billing Program")
-        headerLabel.setFont(QFont("Arial", 28, QFont.Bold))
+        headerLabel = QLabel("StockFlow")
+        headerLabel.setStyleSheet("""
+    font-size: 36pt;
+    font-weight: bold;
+""")
+        headerLabel.setFont(QFont("Arial", 36, QFont.Bold))
         headerLabel.setAlignment(Qt.AlignCenter)
         mainLayout.addWidget(headerLabel)
         # Tabs
@@ -360,6 +365,29 @@ class MainWindow(QMainWindow):
         centralWidget.setLayout(mainLayout)
         self.setCentralWidget(centralWidget)
 
+
+    # Search Products
+    def searchProducts(self):
+        term = self.prodSearchEdit.text().strip()
+        if not term:
+            return self.refreshProducts()
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM Products WHERE name LIKE ? OR CAST(product_id AS TEXT)=?",
+                (f"%{term}%", term)
+            )
+            data = cur.fetchall()
+            conn.close()
+            headers = list(data[0].keys()) if data else ["product_id", "name", "category_id", "supplier_id", "price", "stock_quantity", "barcode", "created_at"]
+            model = TableModel(data, headers)
+            self.productsTable.setModel(model)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Product search failed:\n{e}")
+
+
+
     # ---------- Products Tab ----------
     def createProductsTab(self):
         widget = QWidget()
@@ -374,8 +402,45 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        # --- search field & button ---
+        self.prodSearchEdit = QLineEdit()
+        self.prodSearchEdit.setPlaceholderText("Search products...")
+        toolbar.addWidget(self.prodSearchEdit)
+        #combo box
+        self.prodSearchCombo = QComboBox()
+        self.prodSearchCombo.addItems([
+            "product_id","name","category_id",
+            "supplier_id","price","stock_quantity",
+            "created_at"
+        ])
+        toolbar.addWidget(self.prodSearchCombo)
+        # search button
+        btnSearch = QPushButton("Search")
+        btnSearch.clicked.connect(self.searchProducts)
+        toolbar.addWidget(btnSearch)
+        toolbar.addStretch()
+        # Table
         self.productsTable = QTableView()
+        # make table expand to fill available area
+        self.productsTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.productsTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.productsTable.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # also resize any existing rows immediately
+        self.productsTable.resizeRowsToContents()
+
+        # enlarge cell text and header text
+        self.productsTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.productsTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
+        # Also ensure header widgets use the same font
+        hdrFont = QFont("Arial", 14)
+        self.productsTable.horizontalHeader().setFont(hdrFont)
+        self.productsTable.verticalHeader().setFont(hdrFont)
         layout.addLayout(toolbar)
         layout.addWidget(self.productsTable)
         widget.setLayout(layout)
@@ -384,7 +449,7 @@ class MainWindow(QMainWindow):
 
     def refreshProducts(self):
         try:
-            conn = get_connection()
+            conn = get_connection()   
             cur = conn.cursor()
             cur.execute("SELECT * FROM Products")
             data = cur.fetchall()
@@ -448,7 +513,32 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        # --- search field & button ---
+        self.InvoiceSearchEdit = QLineEdit()
+        self.InvoiceSearchEdit.setPlaceholderText("Search Invoices...")
+        toolbar.addWidget(self.InvoiceSearchEdit)
+        #combobox
+        self.invSearchCombo = QComboBox()
+        self.invSearchCombo.addItems([
+            "invoice_id","customer_id","user_id",
+            "total_amount","payment_status","created_at"
+        ])
+        toolbar.addWidget(self.invSearchCombo)
+        # search button
+        btnSearch = QPushButton("Search")
+        btnSearch.clicked.connect(self.searchInvoices)
+        toolbar.addWidget(btnSearch)
+        toolbar.addStretch()
+        
         self.invoicesTable = QTableView()
+        self.invoicesTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.invoicesTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
         self.invoicesTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addLayout(toolbar)
         layout.addWidget(self.invoicesTable)
@@ -508,13 +598,6 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Delete invoice failed:\n{e}")
 
-
-#     from reportlab.lib import colors
-# from reportlab.lib.pagesizes import A4
-
-# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-# from reportlab.lib.styles import getSampleStyleSheet
-# from reportlab.pdfgen import canvas
 
     def exportInvoicePDF(self):
         # Get selected row from the invoices table
@@ -651,6 +734,66 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"PDF export failed:\n{e}")
 
 
+    def searchProducts(self):
+        term = self.prodSearchEdit.text().strip()
+        if not term: return self.refreshProducts()
+        # q = "SELECT * FROM Products WHERE name LIKE ? OR CAST(product_id AS TEXT)=?"
+        # args = (f"%{term}%", term)
+        col = self.prodSearchCombo.currentText()
+        q = f"SELECT * FROM Products WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshProducts, self.productsTable)
+
+    def searchInvoices(self):
+        term = self.InvoiceSearchEdit.text().strip()
+        if not term: return self.refreshInvoices()
+        col = self.invSearchCombo.currentText()
+        q = f"SELECT * FROM Invoices WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshInvoices, self.invoicesTable)
+
+    def searchSuppliers(self):
+        term = self.supSearchEdit.text().strip()
+        if not term: return self.refreshSuppliers()
+        col = self.supSearchCombo.currentText()
+        q = f"SELECT * FROM Suppliers WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshSuppliers, self.suppliersTable)
+
+    def searchCategories(self):
+        term = self.catSearchEdit.text().strip()
+        if not term: return self.refreshCategories()
+        col = self.catSearchCombo.currentText()
+        q = f"SELECT * FROM Categories WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshCategories, self.categoriesTable)
+
+    def searchCustomers(self):
+        term = self.custSearchEdit.text().strip()
+        if not term: return self.refreshCustomers()
+        col = self.custSearchCombo.currentText()
+        q = f"SELECT * FROM Customers WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshCustomers, self.customersTable)
+
+    def searchUsers(self):
+        term = self.userSearchEdit.text().strip()
+        if not term: return self.refreshUsers()
+        col = self.userSearchCombo.currentText()
+        q = f"SELECT * FROM Users WHERE {col} LIKE ?"
+        args = (f"%{term}%",)
+        self._applySearch(q, args, self.refreshUsers, self.usersTable)
+
+    def _applySearch(self, query, args, fallback, table_view):
+        try:
+            conn = get_connection(); cur = conn.cursor()
+            cur.execute(query, args)
+            data = cur.fetchall()
+            conn.close()
+            headers = list(data[0].keys()) if data else table_view.model()._headers
+            table_view.setModel(TableModel(data, headers))
+        except Exception as e:
+            QMessageBox.critical(self, "Search Error", str(e))
 
 
     # ---------- Suppliers Tab ----------
@@ -667,7 +810,27 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        self.supSearchEdit = QLineEdit()
+        self.supSearchEdit.setPlaceholderText("Search Suppliers...")
+        toolbar.addWidget(self.supSearchEdit)
+        self.supSearchCombo = QComboBox()
+        self.supSearchCombo.addItems([
+            "supplier_id","name","contact_name",
+            "contact_email","phone_number"
+        ])
+        toolbar.addWidget(self.supSearchCombo)
+        btnSearchSup = QPushButton("Search")
+        btnSearchSup.clicked.connect(self.searchSuppliers)
+        toolbar.addWidget(btnSearchSup)
         self.suppliersTable = QTableView()
+        self.suppliersTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.suppliersTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
         self.suppliersTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addLayout(toolbar)
         layout.addWidget(self.suppliersTable)
@@ -740,7 +903,24 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        self.catSearchEdit = QLineEdit()
+        self.catSearchEdit.setPlaceholderText("Search Categories...")
+        toolbar.addWidget(self.catSearchEdit)
+        self.catSearchCombo = QComboBox()
+        self.catSearchCombo.addItems(["category_id","category_name"])
+        toolbar.addWidget(self.catSearchCombo)
+        btnSearchCat = QPushButton("Search")
+        btnSearchCat.clicked.connect(self.searchCategories)
+        toolbar.addWidget(btnSearchCat)
         self.categoriesTable = QTableView()
+        self.categoriesTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.categoriesTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
         self.categoriesTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addLayout(toolbar)
         layout.addWidget(self.categoriesTable)
@@ -813,7 +993,27 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        self.custSearchEdit = QLineEdit()
+        self.custSearchEdit.setPlaceholderText("Search Customers...")
+        toolbar.addWidget(self.custSearchEdit)
+        self.custSearchCombo = QComboBox()
+        self.custSearchCombo.addItems([
+            "customer_id","name","email",
+            "phone_number","address"
+        ])
+        toolbar.addWidget(self.custSearchCombo)
+        btnSearchCust = QPushButton("Search")
+        btnSearchCust.clicked.connect(self.searchCustomers)
+        toolbar.addWidget(btnSearchCust)
         self.customersTable = QTableView()
+        self.customersTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.customersTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
         self.customersTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addLayout(toolbar)
         layout.addWidget(self.customersTable)
@@ -886,7 +1086,24 @@ class MainWindow(QMainWindow):
             toolbar.addWidget(btn)
             btn.clicked.connect(slot)
         toolbar.addStretch()
+        self.userSearchEdit = QLineEdit()
+        self.userSearchEdit.setPlaceholderText("Search Users...")
+        toolbar.addWidget(self.userSearchEdit)
+        self.userSearchCombo = QComboBox()
+        self.userSearchCombo.addItems(["user_id","username","role"])
+        toolbar.addWidget(self.userSearchCombo)
+        btnSearchUser = QPushButton("Search")
+        btnSearchUser.clicked.connect(self.searchUsers)
+        toolbar.addWidget(btnSearchUser)
         self.usersTable = QTableView()
+        self.usersTable.setStyleSheet(
+            " QHeaderView::section { font-size:12pt; font-weight: bold;}"
+        )
+        # Apply 14pt font to both cells and header sections
+        self.usersTable.setStyleSheet("""
+            QTableView { font: 10pt "Arial"; }
+            QHeaderView::section { font: 12pt "Arial"; font-weight: bold;}
+        """)
         self.usersTable.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addLayout(toolbar)
         layout.addWidget(self.usersTable)
